@@ -7,3 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+serde_json = "1.0.48"
+# Initially, use tokio's single-threaded scheduler; later, replace rt-core with rt-threaded for the multithreaded one.
+tokio = { version = "0.2", features = ["rt-core", "tcp", "time", "macros", "sync", "stream"] }
