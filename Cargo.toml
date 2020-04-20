@@ -10,3 +10,8 @@ edition = "2018"
 serde_json = "1.0.48"
 # Initially, use tokio's single-threaded scheduler; later, replace rt-core with rt-threaded for the multithreaded one.
 tokio = { version = "0.2", features = ["rt-core", "tcp", "time", "macros", "sync", "stream"] }
+# Hopefully can use tokio-tls when the pem cert bug fix lands via work on native-tls.
+# Until then...
+# tokio-tls = "0.3"
+# native-tls = "0.2"
+tokio-rustls = "0.12.2"
