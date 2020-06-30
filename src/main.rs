@@ -90,16 +90,22 @@ fn main() -> std::io::Result<()> {
       .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
     let acceptor = TlsAcceptor::from(Arc::new(tls_config));
     // My first future! (even if it is adapted from an example)
-    let f = async {
+    let server_f = async {
+        // Create the socket listener for the server.
         let mut listener = TcpListener::bind(&addr).await?;
+        // Code here to print / log bound address.
         loop {
+            // Process incomming connections,and accept them as TLS.
             let (stream, peer_addr) = listener.accept().await?;
+            // Clone acceptor, so it's overridden with async move. (I think)
             let acceptor = acceptor.clone();
-            let inner_f = async move {
+            let accept_f = async move {
                 // Accepts and initiates as tls.
                 // check the result of what .accept returns, probably match. continue if ok, log if error.
+                // acceptor.accept returns a future that will complete when the tls handshake does, so we need to .await it. (I think).
                 let mut stream = acceptor.accept(stream).await?;
             };
+            // Now await accept_f? Or maybe spawn it so we can keep handling incomming.
         }
     };
     Ok(())
