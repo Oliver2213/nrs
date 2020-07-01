@@ -4,17 +4,18 @@ extern crate tokio;
 extern crate tokio_rustls;
 extern crate serde_json;
 
-
 use std::fs::File;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
-use std::io::{ BufReader, Seek};
+use std::io::{ self, BufReader, Seek};
 use tokio::prelude::*;
 use tokio::net::TcpListener;
 use tokio::runtime;
+use tokio::sync::RwLock;
 use tokio_rustls::rustls::{ Certificate, NoClientAuth, PrivateKey, ServerConfig };
 use tokio_rustls::rustls::internal::pemfile::{ certs, pkcs8_private_keys, rsa_private_keys };
 use tokio_rustls::TlsAcceptor;
+use tokio_rustls::server::TlsStream;
 
 
 // No arg parsing or config yet, just load the cert given a hardcoded name and accept connections; more later.
@@ -38,13 +39,13 @@ enum ClientControlMode {
 
 /// A connected NVDA remote client.
 struct Client {
-    /// A client's associated TCP connection.
-    connection: TCPStream,
+    /// A client's associated tls-wrapped TCP connection.
+    connection: TlsStream,
     /// The NVDA remote protocol version this client says it's using.
     // When / if there are ever more than 255 (!) protocol versions we'll be sure to change this type immediately.
     // (And is i8 even best choice? Can't imagine where we'd have negative...)
     // is an option because... Maybe making client instances before they've said hello to us? Idk, might change.
-    proto_version: option<i8>,
+    proto_version: Option<i8>,
     /// A client's current control mode.
     mode: Option<ClientControlMode>,
     // Clients need an arc<RwLock<SharedState>> or actually arc RwLock to their session.
@@ -64,7 +65,20 @@ struct Session {
     // A day later... Tokio has an async RLock in it's sync module, use Arc<that>
 }
 
+impl Session {
+    /// Session constructor.
+    // Associated function.
+    fn new (key: &str) -> Session {
+        session {
+            key,
+        }
+    }
+    // drop impl once global sessions arc<RwLock<>>
+}
 
+impl Drop for Client {
+    fn drop(&mut self) {
+        
 fn main() -> std::io::Result<()> {
     const cert_fname: &'static str  = "cert.pem";
     let addr = "127.0.0.1:6837"
@@ -104,9 +118,13 @@ fn main() -> std::io::Result<()> {
                 // check the result of what .accept returns, probably match. continue if ok, log if error.
                 // acceptor.accept returns a future that will complete when the tls handshake does, so we need to .await it. (I think).
                 let mut stream = acceptor.accept(stream).await?;
+                Ok(()) as io::Result<()>
             };
             // Now await accept_f? Or maybe spawn it so we can keep handling incomming.
         }
     };
-    Ok(())
+    // Make the runtime run our main future task thing.
+    rt.block_on(server_f)
+    // Does the above return an ok result? Let's comment this out and find out.
+    // Ok(())
 }
