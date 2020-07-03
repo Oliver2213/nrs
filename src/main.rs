@@ -27,6 +27,7 @@ rsa_private_keys works though, and no rsa key shows up with 'openssl x509 -in ce
 Instead, openssl rsa -in cert.pem -text' shows one, so for now I'll use that.
 */
 
+type GLOBAL_SESSIONS_HASHMAP = Arc<RwLock<HashMap<&str, Client>>>;
 
 // Structs in our main file, raa.
 
@@ -62,8 +63,8 @@ struct Session {
     /// The global hash map of sessions.
     /// This is used by the drop impl to remove a session once it goes out of scope.
     // Is this 'idiomatic' / good practice / wil achieve the result I want cleanly? We'll find out.
-    // Also maybe consider the type alias thing, so I can just type global_sessions or something.
-    // Also investigate if string references rather than owned is good here (I suspect not, refs should mean... lifetimes somewhere? hm.)
+    // Investigate if string references rather than owned is good here (I suspect not, refs should mean... lifetimes somewhere? hm.)
+    sessions: GLOBAL_SESSIONS_HASHMAP,
     sessions: Arc<RwLock<HashMap<&str, Client>>>,
     /// The session's user-defined key, for bookkeeping purposes
     /// so the drop impl can remove it from the global list of active sessions.
@@ -116,8 +117,7 @@ fn main() -> std::io::Result<()> {
     // Global map of sessions.
     // Inside an arc and an RwLock, so I can pass a cloned reference to sessions as they're created
     // and when dropped as they go out of scope later, they can remove themselves.
-    // (Is this really how I should write this? Looks... Fine, I guess, just... long.)
-    let  sessions: Arc<RwLock<HashMap<&str, Client>>> = Arc::new(RwLock::new(HashMap::new()));
+    let  sessions: GLOBAL_SESSIONS_HASHMAP = Arc::new(RwLock::new(HashMap::new()));
     // I believe the session global list should stick around, at least until main ends. As they're created, sessions will .clone() it and save so they have a reference.
     // My first future! (even if it is adapted from an example)
     let server_f = async {
