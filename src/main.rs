@@ -9,7 +9,7 @@ use std::fs::File;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::io::{ self, BufReader, Seek};
-use tokio::prelude::*;
+// use tokio::prelude::*;
 use tokio::net::TcpListener;
 use tokio::runtime;
 use tokio::sync::RwLock;
@@ -27,7 +27,7 @@ rsa_private_keys works though, and no rsa key shows up with 'openssl x509 -in ce
 Instead, openssl rsa -in cert.pem -text' shows one, so for now I'll use that.
 */
 
-type GLOBAL_SESSIONS_HASHMAP = Arc<RwLock<HashMap<&str, Client>>>;
+type GlobalSessionsHashmap<'a> = Arc<RwLock<HashMap<&'a str, Client<'a>>>>;
 
 // Structs in our main file, raa.
 
@@ -40,11 +40,11 @@ enum ClientControlMode {
 }
 
 /// A connected NVDA remote client.
-struct Client {
+struct Client<'a> {
     /// A client's associated tls-wrapped TCP connection.
     connection: TlsStream,
     /// A client's associated NVDA remote session.
-    session: Arc<RwLock<Session>>,
+    session: Arc<RwLock<Session<'a>>>,
     /// The NVDA remote protocol version this client says it's using.
     // When / if there are ever more than 255 (!) protocol versions we'll be sure to change this type immediately.
     // (And is i8 even best choice? Can't imagine where we'd have negative...)
@@ -59,31 +59,30 @@ struct Client {
 }
 
 /// An NVDA Remote control session.
-struct Session {
+struct Session<'a> {
     /// The global hash map of sessions.
     /// This is used by the drop impl to remove a session once it goes out of scope.
     // Is this 'idiomatic' / good practice / wil achieve the result I want cleanly? We'll find out.
     // Investigate if string references rather than owned is good here (I suspect not, refs should mean... lifetimes somewhere? hm.)
-    sessions: GLOBAL_SESSIONS_HASHMAP,
-    sessions: Arc<RwLock<HashMap<&str, Client>>>,
+    sessions: GlobalSessionsHashmap<'a>,
     /// The session's user-defined key, for bookkeeping purposes
     /// so the drop impl can remove it from the global list of active sessions.
-    key: String,
+    key: &'a String,
     /// List of clients connected to this session.
-    clients: Vec<Client>,
+    clients: Vec<Client<'a>>,
 }
 
-impl Session {
+impl Session<'_> {
     /// Session constructor.
     // Associated function.
     fn new (key: &str) -> Session {
-        session {
+        Session {
             key,
         }
     }
 }
 
-impl Drop for Client {
+impl Drop for Client<'_> {
     fn drop(&mut self) {
         
     }
@@ -117,16 +116,17 @@ fn main() -> std::io::Result<()> {
     // Global map of sessions.
     // Inside an arc and an RwLock, so I can pass a cloned reference to sessions as they're created
     // and when dropped as they go out of scope later, they can remove themselves.
-    let  sessions: GLOBAL_SESSIONS_HASHMAP = Arc::new(RwLock::new(HashMap::new()));
+    let  sessions: GlobalSessionsHashmap = Arc::new(RwLock::new(HashMap::new()));
     // I believe the session global list should stick around, at least until main ends. As they're created, sessions will .clone() it and save so they have a reference.
     // My first future! (even if it is adapted from an example)
     let server_f = async {
         // Create the socket listener for the server.
         let mut listener = TcpListener::bind(&addr).await?;
-        // Code here to print / log bound address.
+        println!("Server listening on {}.", &addr);
         loop {
             // Process incomming connections,and accept them as TLS.
             let (stream, peer_addr) = listener.accept().await?;
+            println!("New connection established from {}.", &peer_addr);
             // Clone acceptor, so it's overridden with async move. (I think)
             let acceptor = acceptor.clone();
             let accept_f = async move {
