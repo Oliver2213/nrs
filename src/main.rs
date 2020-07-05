@@ -17,6 +17,7 @@ use tokio_rustls::rustls::{ Certificate, NoClientAuth, PrivateKey, ServerConfig 
 use tokio_rustls::rustls::internal::pemfile::{ certs, pkcs8_private_keys, rsa_private_keys };
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::server::TlsStream;
+use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 
 
 // No arg parsing or config yet, just load the cert given a hardcoded name and accept connections; more later.
@@ -29,7 +30,7 @@ Instead, openssl rsa -in cert.pem -text' shows one, so for now I'll use that.
 
 type GlobalSessionsHashmap<'a> = Arc<RwLock<HashMap<&'a str, Client<'a>>>>;
 
-// Structs in our main file, raa.
+// Structs in our main file, raa. (For now)
 
 /// NVDA remote client modes
 enum ClientControlMode {
@@ -129,17 +130,18 @@ fn main() -> std::io::Result<()> {
             println!("New connection established from {}.", &peer_addr);
             // Clone acceptor, so it's overridden with async move. (I think)
             let acceptor = acceptor.clone();
-            let accept_f = async move {
+            tokio::spawn(async move {
                 // Accepts and initiates as tls.
                 // check the result of what .accept returns, probably match. continue if ok, log if error.
                 // acceptor.accept returns a future that will complete when the tls handshake does, so we need to .await it. (I think).
                 let mut stream = acceptor.accept(stream).await?;
+                // Call code here that initializes the connection:
+                // expect a line of JSON describing the client's control mode and chosen session key.
                 Ok(()) as io::Result<()>
-            };
-            // Now await accept_f? Or maybe spawn it so we can keep handling incomming.
-        }
+            });
+        };
     };
-    // Make the runtime run our main future task thing.
+    // Make the runtime run our main listening and connection accepting task.
     rt.block_on(server_f)
     // Does the above return an ok result? Let's comment this out and find out.
     // Ok(())
