@@ -10,7 +10,7 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::io::{ self, BufReader, Seek};
 // use tokio::prelude::*;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime;
 use tokio::sync::RwLock;
 use tokio_rustls::rustls::{ Certificate, NoClientAuth, PrivateKey, ServerConfig };
@@ -42,9 +42,9 @@ enum ClientControlMode {
 
 /// A connected NVDA remote client.
 struct Client<'a> {
-    /// A client's associated tls-wrapped TCP connection.
-    connection: TlsStream,
-    /// A client's associated NVDA remote session.
+    /// A client's line-framed, tls-wrapped tcp connection.
+    connection: Framed<TlsStream<TcpStream>, LinesCodec>,
+    /// The NVDA remote session this client is associated with.
     session: Arc<RwLock<Session<'a>>>,
     /// The NVDA remote protocol version this client says it's using.
     // When / if there are ever more than 255 (!) protocol versions we'll be sure to change this type immediately.
