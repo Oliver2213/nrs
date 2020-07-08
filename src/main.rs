@@ -18,6 +18,11 @@ use tokio_rustls::rustls::internal::pemfile::{ certs, pkcs8_private_keys, rsa_pr
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::server::TlsStream;
 use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
+// Import stream and sink ext traits
+// for functions like send, send_all (sink) and next, (stream).
+// The stream extensions are from tokio, but the sink ones are from futures. Hmmmm.
+use tokio::stream::{Stream, StreamExt};
+use futures::Sink::SinkExt;
 
 
 // No arg parsing or config yet, just load the cert given a hardcoded name and accept connections; more later.
@@ -28,9 +33,16 @@ rsa_private_keys works though, and no rsa key shows up with 'openssl x509 -in ce
 Instead, openssl rsa -in cert.pem -text' shows one, so for now I'll use that.
 */
 
-type GlobalSessionsHashmap<'a> = Arc<RwLock<HashMap<&'a str, Client<'a>>>>;
+/// Shorthand alias for our global hash map of sessions.
+type GlobalSessionsHashmap<'a> = Arc<RwLock<HashMap<&'a str, &Client<'a>>>>;
+/// Alias for a lines-codec, tls-wrapped tcp connection.
+type CONNECTION = Framed<TlsStream<TcpStream>, LinesCodec>;
+/// Shorthand for an NVD remote session, wrapped in an RwLock and an arc for sharing across threads.
+type SESSION<'a> = Arc<RwLock<Session<'a>>>;
+
 
 // Structs in our main file, raa. (For now)
+
 
 /// NVDA remote client modes
 enum ClientControlMode {
@@ -43,16 +55,15 @@ enum ClientControlMode {
 /// A connected NVDA remote client.
 struct Client<'a> {
     /// A client's line-framed, tls-wrapped tcp connection.
-    connection: Framed<TlsStream<TcpStream>, LinesCodec>,
+    connection: CONNECTION,
     /// The NVDA remote session this client is associated with.
-    session: Arc<RwLock<Session<'a>>>,
+    session: SESSION<'a>,
     /// The NVDA remote protocol version this client says it's using.
     // When / if there are ever more than 255 (!) protocol versions we'll be sure to change this type immediately.
     // (And is i8 even best choice? Can't imagine where we'd have negative...)
-    // is an option because... Maybe making client instances before they've said hello to us? Idk, might change.
-    proto_version: Option<i8>,
+    proto_version: i8,
     /// A client's current control mode.
-    mode: Option<ClientControlMode>,
+    mode: ClientControlMode,
     // Clients need an arc<RwLock<SharedState>> or actually arc RwLock to their session.
     // Then probably new constructor that acquires lock on session
     // adds client to session (I guess on construct is fine since they need state / session ref anyways)
@@ -75,11 +86,19 @@ struct Session<'a> {
 
 impl Session<'_> {
     /// Session constructor.
-    // Associated function.
-    fn new (key: &str) -> Session {
-        Session {
+    fn new (sessions: GlobalSessionsHashmap<'a>, key: &str) -> Session {
+        let session = Session {
+            // I think this is passing in sessions we got as arg. Maybe should try .clone() to increase arc refcount, can still do .lock and work below on original, then it goes out of scope.
+            sessions,
+            // Same with this string, though it'd be nice to just have it once in memory, might need to clone. Will see what compiler has to say about it.
             key,
+            // Type is annotated on the struct field, can I just say Vec::new()?
+            clients = Vec::new(),
         }
+        // In the future, consider changing what global sessions are keyed by to a saulted hash of the actual key instead of the key itself.
+        sessions.lock()
+          .insert(key, &session);
+        session
     }
 }
 
