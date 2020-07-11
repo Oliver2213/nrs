@@ -13,6 +13,8 @@ use std::io::{ self, BufReader, Seek};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime;
 use tokio::sync::RwLock;
+use tokio::stream::{Stream, StreamExt};
+use tokio::time::timeout;
 use tokio_rustls::rustls::{ Certificate, NoClientAuth, PrivateKey, ServerConfig };
 use tokio_rustls::rustls::internal::pemfile::{ certs, pkcs8_private_keys, rsa_private_keys };
 use tokio_rustls::TlsAcceptor;
@@ -21,8 +23,7 @@ use tokio_util::codec::{Framed, LinesCodec, LinesCodecError};
 // Import stream and sink ext traits
 // for functions like send, send_all (sink) and next, (stream).
 // The stream extensions are from tokio, but the sink ones are from futures. Hmmmm.
-use tokio::stream::{Stream, StreamExt};
-use futures::Sink::SinkExt;
+use futures::SinkExt;
 
 
 // No arg parsing or config yet, just load the cert given a hardcoded name and accept connections; more later.
@@ -86,15 +87,15 @@ struct Session<'a> {
 
 impl Session<'_> {
     /// Session constructor.
-    fn new (sessions: GlobalSessionsHashmap<'a>, key: &str) -> Session {
+    fn new<'a> (sessions: GlobalSessionsHashmap<'a>, key: &str) -> Session<'a> {
         let session = Session {
             // I think this is passing in sessions we got as arg. Maybe should try .clone() to increase arc refcount, can still do .lock and work below on original, then it goes out of scope.
             sessions,
             // Same with this string, though it'd be nice to just have it once in memory, might need to clone. Will see what compiler has to say about it.
             key,
             // Type is annotated on the struct field, can I just say Vec::new()?
-            clients = Vec::new(),
-        }
+            clients: Vec::new(),
+        };
         // In the future, consider changing what global sessions are keyed by to a saulted hash of the actual key instead of the key itself.
         sessions.lock()
           .insert(key, &session);
