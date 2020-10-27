@@ -1,4 +1,6 @@
 // NRS - an NVDA remote relay server
+// Don't warn about unused imports for now.
+#![allow(unused_imports)]
 
 extern crate tokio;
 extern crate tokio_rustls;
@@ -9,6 +11,7 @@ use std::fs::File;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::io::{ self, BufReader, Seek};
+use std::time::Duration;
 // use tokio::prelude::*;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime;
@@ -35,7 +38,8 @@ Instead, openssl rsa -in cert.pem -text' shows one, so for now I'll use that.
 */
 
 /// Shorthand alias for our global hash map of sessions.
-type GlobalSessionsHashmap<'a> = Arc<RwLock<HashMap<&'a str, &Client<'a>>>>;
+type GlobalSessionsHashmap<'a> = Arc<RwLock<HashMap<&'a str, &'a Session<'a>>>>;
+//type GlobalSessionsHashmap<'a> = HashMap<&'a str, &'a Session<'a>>;
 /// Alias for a lines-codec, tls-wrapped tcp connection.
 type CONNECTION = Framed<TlsStream<TcpStream>, LinesCodec>;
 /// Shorthand for an NVD remote session, wrapped in an RwLock and an arc for sharing across threads.
@@ -58,7 +62,7 @@ struct Client<'a> {
     /// A client's line-framed, tls-wrapped tcp connection.
     connection: CONNECTION,
     /// The NVDA remote session this client is associated with.
-    session: SESSION<'a>,
+    session: Session<'a>,
     /// The NVDA remote protocol version this client says it's using.
     // When / if there are ever more than 255 (!) protocol versions we'll be sure to change this type immediately.
     // (And is i8 even best choice? Can't imagine where we'd have negative...)
@@ -80,25 +84,22 @@ struct Session<'a> {
     sessions: GlobalSessionsHashmap<'a>,
     /// The session's user-defined key, for bookkeeping purposes
     /// so the drop impl can remove it from the global list of active sessions.
-    key: &'a String,
+    key: &'a str,
     /// List of clients connected to this session.
     clients: Vec<Client<'a>>,
 }
 
-impl Session<'_> {
+impl<'a> Session<'a> {
     /// Session constructor.
-    fn new<'a> (sessions: GlobalSessionsHashmap<'a>, key: &str) -> Session<'a> {
+    fn new (sessions: &'a GlobalSessionsHashmap, key: &'a str) -> Session<'a> {
         let session = Session {
-            // I think this is passing in sessions we got as arg. Maybe should try .clone() to increase arc refcount, can still do .lock and work below on original, then it goes out of scope.
-            sessions,
+            sessions: sessions.clone(),
             // Same with this string, though it'd be nice to just have it once in memory, might need to clone. Will see what compiler has to say about it.
             key,
             // Type is annotated on the struct field, can I just say Vec::new()?
             clients: Vec::new(),
         };
         // In the future, consider changing what global sessions are keyed by to a saulted hash of the actual key instead of the key itself.
-        sessions.lock()
-          .insert(key, &session);
         session
     }
 }
@@ -137,9 +138,10 @@ fn main() -> std::io::Result<()> {
     // Global map of sessions.
     // Inside an arc and an RwLock, so I can pass a cloned reference to sessions as they're created
     // and when dropped as they go out of scope later, they can remove themselves.
-    let  sessions: GlobalSessionsHashmap = Arc::new(RwLock::new(HashMap::new()));
+    // let  sessions: GlobalSessionsHashmap = Arc::new(RwLock::new(HashMap::new()));
     // I believe the session global list should stick around, at least until main ends. As they're created, sessions will .clone() it and save so they have a reference.
     // My first future! (even if it is adapted from an example)
+    // This is getting long enough where it's starting to make sense to functionize it soon.
     let server_f = async {
         // Create the socket listener for the server.
         let mut listener = TcpListener::bind(&addr).await?;
@@ -152,11 +154,20 @@ fn main() -> std::io::Result<()> {
             let acceptor = acceptor.clone();
             tokio::spawn(async move {
                 // Accepts and initiates as tls.
-                // check the result of what .accept returns, probably match. continue if ok, log if error.
-                // acceptor.accept returns a future that will complete when the tls handshake does, so we need to .await it. (I think).
-                let mut stream = acceptor.accept(stream).await?;
-                // Call code here that initializes the connection:
-                // expect a line of JSON describing the client's control mode and chosen session key.
+                /*
+                // Wrapped in a timeout, so if it doesn't complete in, say, 10 seconds we close the connection.
+                // let mut stream = acceptor.accept(stream).await?;
+                match timeout(Duration::from_secs(10), acceptor.accept(stream)).await {
+                    Err(tokio::time::Elapsed) => {
+                        // Our timeout has elapsed and the tls handshake future hasn't completed yet.
+                        println!("Connection {} did not finish TLS handshake within 10 seconds; closing.", &peer_addr)
+                    },
+                    Ok(stream) => {
+                        // Call code here that initializes the connection:
+                        // expect a line of JSON describing the client's control mode and chosen session key.
+                    },
+                }
+                */
                 Ok(()) as io::Result<()>
             });
         };
