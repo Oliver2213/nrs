@@ -38,12 +38,11 @@ Instead, openssl rsa -in cert.pem -text' shows one, so for now I'll use that.
 */
 
 /// Shorthand alias for our global hash map of sessions.
-type GlobalSessionsHashmap<'a> = Arc<RwLock<HashMap<&'a str, &'a Session<'a>>>>;
-//type GlobalSessionsHashmap<'a> = HashMap<&'a str, &'a Session<'a>>;
+type GlobalSessionsHashmap<'kl> = Arc<RwLock<HashMap<&'kl str, &'kl Session<'kl>>>>;
 /// Alias for a lines-codec, tls-wrapped tcp connection.
 type CONNECTION = Framed<TlsStream<TcpStream>, LinesCodec>;
 /// Shorthand for an NVD remote session, wrapped in an RwLock and an arc for sharing across threads.
-type SESSION<'a> = Arc<RwLock<Session<'a>>>;
+type SESSION<'kl> = Arc<RwLock<Session<'kl>>>;
 
 
 // Structs in our main file, raa. (For now)
@@ -58,11 +57,11 @@ enum ClientControlMode {
 }
 
 /// A connected NVDA remote client.
-struct Client<'a> {
+struct Client<'kl> {
     /// A client's line-framed, tls-wrapped tcp connection.
     connection: CONNECTION,
     /// The NVDA remote session this client is associated with.
-    session: Session<'a>,
+    session: Session<'kl>,
     /// The NVDA remote protocol version this client says it's using.
     // When / if there are ever more than 255 (!) protocol versions we'll be sure to change this type immediately.
     // (And is i8 even best choice? Can't imagine where we'd have negative...)
@@ -76,24 +75,26 @@ struct Client<'a> {
 }
 
 /// An NVDA Remote control session.
-struct Session<'a> {
+struct Session<'kl> {
     /// The global hash map of sessions.
     /// This is used by the drop impl to remove a session once it goes out of scope.
     // Is this 'idiomatic' / good practice / wil achieve the result I want cleanly? We'll find out.
     // Investigate if string references rather than owned is good here (I suspect not, refs should mean... lifetimes somewhere? hm.)
-    sessions: GlobalSessionsHashmap<'a>,
+    sessions: GlobalSessionsHashmap<'kl>,
     /// The session's user-defined key, for bookkeeping purposes
     /// so the drop impl can remove it from the global list of active sessions.
-    key: &'a str,
+    // The key should live as long as an instance exists.
+    key: &'kl str,
     /// List of clients connected to this session.
-    clients: Vec<Client<'a>>,
+    clients: Vec<Client<'kl>>,
 }
 
-impl<'a> Session<'a> {
+impl<'kl> Session<'kl> {
     /// Session constructor.
-    fn new (sessions: &'a GlobalSessionsHashmap, key: &'a str) -> Session<'a> {
+    fn new (sessions: &'kl GlobalSessionsHashmap, key: &'kl str) -> Session<'kl> {
+        let s = sessions.clone();
         let session = Session {
-            sessions: sessions.clone(),
+            sessions: s,
             // Same with this string, though it'd be nice to just have it once in memory, might need to clone. Will see what compiler has to say about it.
             key,
             // Type is annotated on the struct field, can I just say Vec::new()?
