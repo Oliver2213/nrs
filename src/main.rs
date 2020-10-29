@@ -61,7 +61,7 @@ struct Client<'kl> {
     /// A client's line-framed, tls-wrapped tcp connection.
     connection: CONNECTION,
     /// The NVDA remote session this client is associated with.
-    session: Session<'kl>,
+    session: &'kl Session<'kl>,
     /// The NVDA remote protocol version this client says it's using.
     // When / if there are ever more than 255 (!) protocol versions we'll be sure to change this type immediately.
     // (And is i8 even best choice? Can't imagine where we'd have negative...)
@@ -80,7 +80,7 @@ struct Session<'kl> {
     /// This is used by the drop impl to remove a session once it goes out of scope.
     // Is this 'idiomatic' / good practice / wil achieve the result I want cleanly? We'll find out.
     // Investigate if string references rather than owned is good here (I suspect not, refs should mean... lifetimes somewhere? hm.)
-    sessions: GlobalSessionsHashmap<'kl>,
+    sessions: &'kl GlobalSessionsHashmap<'kl>,
     /// The session's user-defined key, for bookkeeping purposes
     /// so the drop impl can remove it from the global list of active sessions.
     // The key should live as long as an instance exists.
@@ -91,10 +91,9 @@ struct Session<'kl> {
 
 impl<'kl> Session<'kl> {
     /// Session constructor.
-    fn new (sessions: &'kl GlobalSessionsHashmap, key: &'kl str) -> Session<'kl> {
-        let s = sessions.clone();
+    fn new (sessions: &'kl GlobalSessionsHashmap<'kl>, key: &'kl str) -> Session<'kl> {
         let session = Session {
-            sessions: s,
+            sessions,
             // Same with this string, though it'd be nice to just have it once in memory, might need to clone. Will see what compiler has to say about it.
             key,
             // Type is annotated on the struct field, can I just say Vec::new()?
@@ -157,7 +156,7 @@ fn main() -> std::io::Result<()> {
                 // Accepts and initiates as tls.
                 /*
                 // Wrapped in a timeout, so if it doesn't complete in, say, 10 seconds we close the connection.
-                // let mut stream = acceptor.accept(stream).await?;
+                let mut stream = acceptor.accept(stream).await?;
                 match timeout(Duration::from_secs(10), acceptor.accept(stream)).await {
                     Err(tokio::time::Elapsed) => {
                         // Our timeout has elapsed and the tls handshake future hasn't completed yet.
