@@ -154,20 +154,17 @@ fn main() -> std::io::Result<()> {
             let acceptor = acceptor.clone();
             tokio::spawn(async move {
                 // Accepts and initiates as tls.
-                /*
-                // Wrapped in a timeout, so if it doesn't complete in, say, 10 seconds we close the connection.
-                let mut stream = acceptor.accept(stream).await?;
-                match timeout(Duration::from_secs(10), acceptor.accept(stream)).await {
-                    Err(tokio::time::Elapsed) => {
-                        // Our timeout has elapsed and the tls handshake future hasn't completed yet.
-                        println!("Connection {} did not finish TLS handshake within 10 seconds; closing.", &peer_addr)
+                match acceptor.accept(stream).await {
+                    Err(e) => {
+                        eprintln!("Error when accepting TLS connection for {}: {:?}", peer_addr, e);
                     },
                     Ok(stream) => {
                         // Call code here that initializes the connection:
                         // expect a line of JSON describing the client's control mode and chosen session key.
-                    },
-                }
-                */
+                        
+                    }
+                };
+                
                 Ok(()) as io::Result<()>
             });
         };
